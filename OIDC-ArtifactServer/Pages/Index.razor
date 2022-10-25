@@ -1,0 +1,13 @@
+﻿@page "/"
+<PageTitle>Index</PageTitle>
+
+<CascadingAuthenticationState>
+    <AuthorizeView>
+        <Authorized>
+            <a href="/api/Account/signout">Sign Out</a>
+        </Authorized>
+        <NotAuthorized>
+            <div>Please <a href="/api/Account/signin">Sign In</a></div>
+        </NotAuthorized>
+    </AuthorizeView>
+</CascadingAuthenticationState>

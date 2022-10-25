@@ -1,0 +1,56 @@
+﻿@using System.ComponentModel.DataAnnotations
+
+<!--
+    Examples
+    (Today)
+    (1 Day ago)
+    (3 Days ago)
+-->
+
+<style>
+    .days-since-counter{
+
+    }
+</style>
+
+<!--If >1 days since update, display days since-->
+@if(Delta.Days > 0)
+{
+    bool isMoreThanOneDay = @Delta.Days > 1 ? true : false;
+    <div class="days-since-counter">(@Delta.Days Day@(isMoreThanOneDay ? "s" : "") ago)</div>
+}
+else
+{
+    <!--Today-->
+    if(ShowMinOrHoursIfToday)
+    {
+        if(Delta.Hours > 0)
+        {
+            <div class="days-since-counter">(@(Delta.Hours == 1 ? " 1 Hour ago" : Delta.Hours + " Hours ago"))</div>
+        }
+        else
+        {
+            <div class="days-since-counter">(@(Delta.Minutes == 1 ? " 1 Minute ago" : Delta.Minutes + " Minutes ago"))</div>
+        }
+    }
+    else
+    {
+        <div class="days-since-counter">(Today)</div>
+    }
+}
+
+
+@code {
+    [Parameter]
+    public DateTime Time { get; set; } = DateTime.UtcNow;
+
+    [Parameter]
+    public bool ShowMinOrHoursIfToday { get; set; } = false;
+
+    private TimeSpan Delta = TimeSpan.FromSeconds(0);
+
+    protected override void OnInitialized()
+    {
+        Delta = DateTime.UtcNow.Subtract(Time);
+    }
+}

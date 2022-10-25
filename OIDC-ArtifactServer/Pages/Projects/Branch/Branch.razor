@@ -1,0 +1,182 @@
+﻿@page "/projects/instance/{projectname}/{branchname}"
+@using OIDC_ArtifactServer.Models
+@using OIDC_ArtifactServer.Project
+@inject ArtifactDb db;
+@inject NavigationManager Nav;
+@inject ProjectManagement projectmgmt;
+@inject ProjectEventEmitter projectEvents;
+@implements IDisposable;
+
+<style>
+    .table-row-clickable{
+        cursor:pointer;
+    }
+
+    .delete-button-container{
+        width: 100%;
+    }
+
+    .btn-right{
+        float: right;
+    }
+</style>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="#">Home</a></li>
+    <li class="breadcrumb-item"><a href="/projects">Projects</a></li>
+    <li class="breadcrumb-item"><a href="/projects/instance/@projectname">@projectname</a></li>
+    <li class="breadcrumb-item active" aria-current="page">@branchname</li>
+  </ol>
+</nav>
+@if(ErrorMessage != null)
+{
+    @ErrorMessage
+}
+else if(PageReady)
+{
+    <h3>Branch: @branchname</h3>
+    <CascadingAuthenticationState>
+        <AuthorizeView Policy="admin">
+          <div class="delete-button-container">
+            <button class="btn btn-danger btn-right" @onclick=@(() => { HandleDeleteBranch(); })>Delete</button>
+          </div>
+        </AuthorizeView>
+    </CascadingAuthenticationState>
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Artifact Entry</th>
+              <th scope="col"># Files</th>
+              <th scope="col">Time Added</th>
+            </tr>
+          </thead>
+          <tbody>
+            @foreach(var entry in ArtifactEntries)
+            {
+            <tr class="table-row-clickable" @onclick=@(() => { HandleClick(entry.Name); })>
+              <th scope="row">@entry.Name</th>
+              <td>@entry.NumFiles</td>
+              <td>
+                <OIDC_ArtifactServer.Pages.Component.LocalTime Time="entry.TimeAdded" />
+                <OIDC_ArtifactServer.Pages.Component.TimeSince Time="entry.TimeAdded" ShowMinOrHoursIfToday=true />
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+}
+else
+{
+    <div class="wait">Please wait...</div>
+}
+
+
+@code {
+    [Parameter]
+    public string projectname { get; set; }
+    [Parameter]
+    public string branchname { get; set; }
+
+    private string ErrorMessage { get; set; } = null;
+
+    private bool PageReady = false;
+
+    public class ArtifactEntryDTO
+    {
+        public string Name { get; set; }
+        public int NumFiles { get; set; }
+        public DateTime TimeAdded { get; set; }
+    }
+
+    private List<ArtifactEntryDTO> ArtifactEntries { get; set; } = new();
+
+    protected override void OnInitialized()
+    {
+        projectEvents.OnArtifactUpload += OnArtifact;
+        projectEvents.OnDeletedBranch += OnBranchDelete;
+        base.OnInitialized();
+    }
+
+    public void Dispose()
+    {
+        projectEvents.OnArtifactUpload -= OnArtifact;
+        projectEvents.OnDeletedBranch -= OnBranchDelete;
+    }
+
+    public void OnBranchDelete(object sender, string project, string branch)
+    {
+        if(project == projectname && branch == branchname)
+        {
+            Nav.NavigateTo($"/projects/instance/{projectname}");
+        }
+    }
+
+    public void OnArtifact(object sender, string project, string branch, string entryName)
+    {
+        if (project != projectname)
+            return;
+
+        InvokeAsync(async () =>
+        {
+            await PollArtifacts();
+
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await PollArtifacts();
+    }
+
+    public void HandleClick(string entryName)
+    {
+        Nav.NavigateTo($"/projects/instance/{projectname}/{branchname}/{entryName}");
+    }
+
+    public void HandleDeleteBranch()
+    {
+        InvokeAsync(async () =>
+        {
+            await projectmgmt.DeleteBranch(projectname, branchname);
+            Nav.NavigateTo($"/projects/instance/{projectname}");
+            StateHasChanged();
+        });
+    }
+
+    public async Task PollArtifacts()
+    {
+        ArtifactEntries.Clear();
+        var project = db.Projects.FirstOrDefault(x => x.Name == projectname);
+        if(project == null)
+        {
+            ErrorMessage = "Sorry that project doesn't exist";
+            StateHasChanged();
+            return;
+        }
+
+        var branch = project.Branches.FirstOrDefault(x => x.Name == branchname);
+        if(branch == null)
+        {
+            ErrorMessage = "Sorry that branch doesn't exist";
+            StateHasChanged();
+            return;
+        }
+
+        //since postgre, materialize list
+        var entries = branch.Artifacts.OrderByDescending(x => x.TimeAdded).ToList();
+        foreach(var entry in entries)
+        {
+            ArtifactEntries.Add(new ArtifactEntryDTO()
+            {
+                Name = entry.EntryName,
+                NumFiles = entry.Files.Count,
+                TimeAdded = entry.TimeAdded
+            });
+        }
+
+        PageReady = true;
+        StateHasChanged();
+    }
+}

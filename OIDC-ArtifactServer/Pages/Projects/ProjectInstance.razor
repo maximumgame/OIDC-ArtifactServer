@@ -1,0 +1,127 @@
+﻿@page "/projects/instance/{projectName}"
+@using Microsoft.EntityFrameworkCore
+@using OIDC_ArtifactServer.Models
+@using OIDC_ArtifactServer.Project
+@inject ArtifactDb db;
+@inject NavigationManager Nav;
+@inject ProjectManagement projectmgmt;
+
+<style>
+    .table-row-clickable{
+        cursor:pointer;
+    }
+
+    .delete-button-container{
+        width: 100%;
+    }
+
+    .btn-right{
+        float: right;
+    }
+</style>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="#">Home</a></li>
+    <li class="breadcrumb-item"><a href="/projects">Projects</a></li>
+    <li class="breadcrumb-item active" aria-current="page">@projectName</li>
+  </ol>
+</nav>
+@if(ErrorMessage != null)
+{
+    @ErrorMessage
+}
+else
+{
+    <h3>Project: @projectName</h3>
+    <CascadingAuthenticationState>
+        <AuthorizeView Policy="admin">
+            <Authorized>
+                <div class="delete-button-container">
+                    <button class="btn btn-danger btn-right" @onclick=@(() => { HandleDeleteProject(projectName); })>Delete project</button>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </CascadingAuthenticationState>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th scope="col">Branch</th>
+                <th scope="col"># Artifact entries</th>
+                <th scope="col">Last Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach(var branch in Branches)
+            {
+                <tr class="table-row-clickable" @onclick=@(() => { HandleClick(branch.Name); })>
+                    <th scope="row">@branch.Name</th>
+                    <td>@branch.NumberArtifacts</td>
+                    <td>
+                        <OIDC_ArtifactServer.Pages.Component.LocalTime Time="branch.LastUpdate" />
+                        <OIDC_ArtifactServer.Pages.Component.TimeSince Time="branch.LastUpdate" ShowMinOrHoursIfToday=true />
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+
+@code {
+    public string ErrorMessage = null;
+
+    [Parameter]
+    public string projectName { get; set; }
+
+    private List<BranchDTO> Branches { get; set; } = new();
+
+    public class BranchDTO
+    {
+        public string Name { get; set; }
+        public int NumberArtifacts { get; set; } = 0;
+        public DateTime LastUpdate { get; set; }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBranches();
+    }
+
+    public void HandleClick(string branchName)
+    {
+        Nav.NavigateTo($"/projects/instance/{projectName}/{branchName}");
+    }
+
+    private void HandleDeleteProject(string project)
+    {
+        InvokeAsync(async () =>
+        {
+            await projectmgmt.DeleteProject(project);
+            Nav.NavigateTo("/projects");
+        });
+    }
+
+    public async Task LoadBranches()
+    {
+        var project = db.Projects.Include(x => x.Branches).FirstOrDefault(x => x.Name == projectName);
+        if(project == null)
+        {
+            //error message
+            ErrorMessage = "Sorry that project doesn't exist";
+            return;
+        }
+
+        foreach(var branch in project.Branches.ToList())
+        {
+            int artifactCount = branch.Artifacts.Count;
+            Branches.Add(new BranchDTO()
+            {
+                Name = branch.Name,
+                LastUpdate = branch.LastUpdate,
+                NumberArtifacts = artifactCount
+            });
+        }
+    }
+}

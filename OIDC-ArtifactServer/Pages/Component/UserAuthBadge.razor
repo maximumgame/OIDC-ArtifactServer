@@ -1,0 +1,46 @@
+﻿@using Microsoft.AspNetCore.Http
+@inject IHttpContextAccessor contextAccessor;
+
+<style>
+    .username{
+
+    }
+    .signin-link{
+
+    }
+</style>
+
+<div class="main-content">
+    @if(IsAuthenticated)
+    {
+        <div class="username">@Username</div>
+    }
+    else
+    {
+        <a href="/api/Account/signin" class="signin-link">Login</a>
+    }
+</div>
+
+@code {
+    private bool IsAuthenticated = false;
+    private string Username = "";
+
+    protected override void OnInitialized()
+    {
+        CheckAuthentication();
+        base.OnInitialized();
+    }
+
+    private void CheckAuthentication()
+    {
+        var context = contextAccessor.HttpContext;
+        if (context == null)
+            return;
+
+        if (context.User.Identity != null &&
+            context.User.Identity.IsAuthenticated)
+            IsAuthenticated = true;
+
+        Username = context.User.Identity!.Name == null ? "" : context.User.Identity!.Name!;
+    }
+}

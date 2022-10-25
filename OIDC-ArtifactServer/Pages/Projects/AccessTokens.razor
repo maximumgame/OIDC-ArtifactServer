@@ -1,0 +1,89 @@
+﻿@page "/projects/access-tokens"
+@using OIDC_ArtifactServer.Models
+@inject ArtifactDb db;
+@attribute [Authorize("admin")]
+
+<div class="usage-info">
+    Your pipeline should upload to /api/artifact/upload-artifact with header `Authroization: Bearer <b>token here</b>`
+</div>
+<button type="button" class="btn btn-primary" @onclick=@(() => { CreateToken(); })>Create token</button>
+<br />
+<table class="table">
+    <thead>
+    <tr>
+        <th scope="col">Token Id</th>
+        <th>Token</th>
+        <th>Action</th>
+    </tr>
+    </thead>
+    <tbody>
+    @foreach(var token in accesstokens)
+    {
+    <tr>
+        <th scope="row">@token.Id</th>
+        <th>@token.Value</th>
+        <th>
+            <button class="btn btn-danger" @onclick=@(() => { DeleteToken(token.Id); })>Delete</button>
+        </th>
+    </tr>
+    }
+    </tbody>
+</table>
+
+@code {
+    private List<AccessTokenDTO> accesstokens { get; set; } = new();
+
+    private Random random = new Random();
+
+    public class AccessTokenDTO
+    {
+        public int Id { get; set; }
+        public string Value { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        LoadTokens();
+    }
+
+    private void LoadTokens()
+    {
+        accesstokens.Clear();
+        var tokens = db.AccessTokens.ToList();
+        foreach(var token in tokens)
+        {
+            accesstokens.Add(new AccessTokenDTO
+            {
+                Id = token.Id,
+                Value = token.Token
+            });
+        }
+    }
+
+    private void DeleteToken(int tokenId)
+    {
+        var token = db.AccessTokens.FirstOrDefault(x => x.Id == tokenId);
+        if (token != null)
+        {
+            db.AccessTokens.Remove(token);
+            db.SaveChanges();
+            LoadTokens();
+            StateHasChanged();
+        }
+    }
+
+    private void CreateToken()
+    {
+        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        var token = new string(Enumerable.Repeat(chars, 32)
+            .Select(s => s[random.Next(s.Length)]).ToArray());
+
+        db.AccessTokens.Add(new AccessToken()
+        {
+            Token = token
+        });
+        db.SaveChanges();
+        LoadTokens();
+        StateHasChanged();
+    }
+}

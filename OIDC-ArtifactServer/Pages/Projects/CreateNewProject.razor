@@ -1,0 +1,67 @@
+﻿@page "/projects/new"
+@using OIDC_ArtifactServer.Models
+@using System.ComponentModel.DataAnnotations
+@inject ArtifactDb db;
+@inject NavigationManager Nav;
+@attribute [Authorize("admin")]
+
+<style>
+    .error{
+        color: red;
+    }
+</style>
+
+@if(ErrorMessage != null)
+{
+    <div class="error">
+        @ErrorMessage
+    </div>
+}
+
+<EditForm Model="@projectModel" OnValidSubmit="@HandleSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary/>
+
+    <br />
+    <p>
+        Project Name: <InputText id="project-name" @bind-Value="@projectModel.Name"></InputText>
+    </p>
+    <button type="submit">Submit</button>
+</EditForm>
+
+@code {
+    public class NewProjectModel
+    {
+        [Required]
+        [StringLength(256, MinimumLength = 1, ErrorMessage = "Name length is invalid (1-256)")]
+        public string? Name { get; set; }
+    }
+
+    public NewProjectModel projectModel = new();
+    public string? ErrorMessage = null;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+    }
+
+    private async Task HandleSubmit()
+    {
+        //check if this project name already exists
+        if(db.Projects.Any(s => s.Name == projectModel.Name))
+        {
+            //failure
+            ErrorMessage = $"Project name: {projectModel.Name} already exists";
+            return;
+        }
+
+        await db.Projects.AddAsync(new Project()
+        {
+            Name = projectModel.Name!,
+            Branches = new List<ArtifactBranch>() { },
+            LastUpdate = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        Nav.NavigateTo($"/projects/instance/{projectModel.Name}");
+    }
+}

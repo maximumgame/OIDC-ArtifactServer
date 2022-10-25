@@ -1,0 +1,188 @@
+﻿@page "/artifact-culling"
+@using Microsoft.EntityFrameworkCore
+@using OIDC_ArtifactServer.Models
+@using System.ComponentModel.DataAnnotations
+@inject ArtifactDb db;
+@attribute [Authorize("admin")]
+
+<style>
+    .error {
+        color: red;
+    }
+</style>
+
+@if (ErrorMessage != null)
+{
+    <div class="error">
+        @ErrorMessage
+    </div>
+}
+
+<EditForm Model="@cullModel" OnValidSubmit="@HandleSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <br />
+    Add a new artifact culling option to Branch:
+    <br />
+    <InputSelect
+        @bind-Value="@cullModel.ArtifactBanchId"
+    >
+        @foreach(var branch in Branches)
+        {
+            <option value=@branch.Id>@branch.Name</option>
+        }
+    </InputSelect>
+    <br />
+    Max Artifacts in branch:
+    <br />
+    <InputNumber @bind-Value="@cullModel.MaxArtifacts"></InputNumber>
+    <button type="submit">Submit</button>
+</EditForm>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th scope="col">Cull Id</th>
+            <th>Branch</th>
+            <th>Max Artifacts</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var cull in cullings)
+        {
+            <tr>
+                <th scope="row">@cull.Id</th>
+                <th>@cull.Branch.Name</th>
+                <th>@cull.MaxArtifacts</th>
+                <th>
+                    <button class="btn btn-danger" @onclick=@(() => { DeleteCull(cull.Id); })>Delete</button>
+                </th>
+            </tr>
+        }
+    </tbody>
+</table>
+
+
+@code {
+    public class CullingDTO
+    {
+        public int Id { get; set; }
+        public ArtifactBranch Branch { get; set; }
+        public int MaxArtifacts { get; set; }
+    }
+
+    public class CullModel
+    {
+        public int ArtifactBanchId { get; set; }
+        public int MaxArtifacts { get; set; }
+    }
+
+    public CullModel cullModel = new();
+    public string? ErrorMessage = null;
+
+    private List<CullingDTO> cullings = new List<CullingDTO>();
+    private List<ArtifactBranch> Branches = new List<ArtifactBranch>();
+
+    protected override void OnInitialized()
+    {
+        LoadBranches();
+        LoadCulling();
+    }
+
+    private void LoadBranches()
+    {
+        Branches.Clear();
+        var dbprojects = db.Projects
+                            .Include(x => x.Branches); //don't lazy load since we know this data is required
+        foreach(var project in dbprojects)
+        {
+            foreach(var branch in project.Branches)
+            {
+                Branches.Add(branch);
+            }
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        ErrorMessage = null;
+        if(cullModel.MaxArtifacts < 0)
+        {
+            ErrorMessage = "Can not set a Max Artifacts less than 0";
+            StateHasChanged();
+            return;
+        }
+
+        //find branch
+        var dbprojects = db.Projects
+                            .Include(x => x.Branches); //don't lazy load since we know this data is required
+        ArtifactBranch artifactBranch = null; //we can't init a db save inside a for loop (since the connection is in use)
+        foreach(var project in dbprojects)
+        {
+            artifactBranch = project.Branches.FirstOrDefault(x => x.Id == cullModel.ArtifactBanchId);
+            if (artifactBranch != null)
+                break;
+        }
+
+        if (artifactBranch != null)
+        {
+            await AddCull(new CullingDTO()
+                {
+                    MaxArtifacts = cullModel.MaxArtifacts,
+                    Branch = artifactBranch
+                });
+            return;
+        }
+
+        //could not find branch
+        ErrorMessage = "Failed to find branch";
+        StateHasChanged();
+    }
+
+    private void LoadCulling()
+    {
+        cullings.Clear();
+        var dbcullings = db.ArtifactCullings.ToList();
+        foreach (var cull in dbcullings)
+        {
+            cullings.Add(new CullingDTO
+                {
+                    Id = cull.Id,
+                    Branch = cull.Branch,
+                    MaxArtifacts = cull.MaxArtifacts
+                });
+        }
+        StateHasChanged();
+    }
+
+    private async Task AddCull(CullingDTO dto)
+    {
+        var cullInDb = db.ArtifactCullings.FirstOrDefault(x => x.Branch.Id == dto.Branch.Id);
+        if(cullInDb != null) //modify existing cull option instead of adding
+        {
+            cullInDb.MaxArtifacts = dto.MaxArtifacts;
+        }
+        else
+        {
+            db.ArtifactCullings.Add(new Models.ArtifactCulling()
+            {
+                Branch = dto.Branch,
+                MaxArtifacts = dto.MaxArtifacts
+            });
+        }
+        await db.SaveChangesAsync();
+        LoadCulling(); //update view
+    }
+
+    private void DeleteCull(int cullId)
+    {
+        var cull = db.ArtifactCullings.FirstOrDefault(x => x.Id == cullId);
+        if(cull != null)
+        {
+            db.ArtifactCullings.Remove(cull);
+            db.SaveChanges();
+            LoadCulling();
+        }
+    }
+}

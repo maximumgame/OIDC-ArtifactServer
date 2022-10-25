@@ -1,0 +1,76 @@
+﻿@page "/projects"
+@using Microsoft.EntityFrameworkCore
+@using OIDC_ArtifactServer.Models
+@attribute [Authorize]
+@inject ArtifactDb db;
+@inject NavigationManager nav;
+
+<style>
+    .table-row-clickable{
+        cursor:pointer;
+    }
+</style>
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="#">Home</a></li>
+    <li class="breadcrumb-item active" aria-current="page">Projects</li>
+  </ol>
+</nav>
+<table class="table">
+    <thead>
+    <tr>
+        <th scope="col">Project</th>
+        <th scope="col"># Branches</th>
+        <th scope="col">Last Update</th>
+    </tr>
+    </thead>
+    <tbody>
+    @foreach(var project in projects)
+    {
+    <tr class="table-row-clickable" @onclick=@(() => { HandleClick(project.Name); })>
+        <th scope="row">@project.Name</th>
+        <td>@project.Branches</td>
+        <td>
+        <OIDC_ArtifactServer.Pages.Component.LocalTime Time="project.LastUpdate" />
+        <OIDC_ArtifactServer.Pages.Component.TimeSince Time="project.LastUpdate" ShowMinOrHoursIfToday=true />
+    </td>
+    </tr>
+    }
+    </tbody>
+</table>
+
+@code {
+
+    public record ProjectDTO
+    {
+        public string Name { get; set; }
+        public int Branches { get; set; }
+        public DateTime LastUpdate { get; set; }
+    }
+
+    List<ProjectDTO> projects = new();
+
+    protected override void OnInitialized()
+    {
+        GetProjects();
+    }
+
+    private void GetProjects()
+    {
+        foreach(var project in db.Projects.Include(x => x.Branches).ToArray())
+        {
+            var projectdtp = new ProjectDTO()
+            {
+                Name = project.Name,
+                Branches = project.Branches.Count,
+                LastUpdate = project.LastUpdate
+            };
+            projects.Add(projectdtp);
+        }
+    }
+
+    private void HandleClick(string project)
+    {
+        nav.NavigateTo($"/projects/instance/{project}");
+    }
+}

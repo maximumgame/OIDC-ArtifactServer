@@ -1,0 +1,209 @@
+﻿@page "/projects/instance/{projectname}/{branchname}/{entryname}"
+@using Ganss.XSS
+@using Markdig
+@using Microsoft.AspNetCore.Html
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.Extensions.Options
+@using OIDC_ArtifactServer.Configuration
+@using OIDC_ArtifactServer.Controllers
+@using OIDC_ArtifactServer.Models
+@using System.Net
+@using OIDC_ArtifactServer.Project
+@inject ArtifactDb db;
+@inject NavigationManager Nav;
+@inject IOptions<FileStorage> fileStorageOptions;
+@inject ProjectManagement projectmgmt;
+
+<style>
+    .table-row-clickable{
+        cursor:pointer;
+    }
+
+    .line {
+        background-color: black;
+        width: 100%;
+        outline: 1px red;
+    }
+
+    .markdown-zone{
+        background-color: #1a1a1a1a;
+        border: 1px solid black;
+        padding-left: 10px;
+    }
+</style>
+
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="#">Home</a></li>
+    <li class="breadcrumb-item"><a href="/projects">Projects</a></li>
+    <li class="breadcrumb-item"><a href="/projects/instance/@projectname">@projectname</a></li>
+    <li class="breadcrumb-item"><a href="/projects/instance/@projectname/@branchname">@branchname</a></li>
+    <li class="breadcrumb-item active" aria-current="page">@entryname</li>
+  </ol>
+</nav>
+
+@if(ErrorMessage != null)
+{
+    @ErrorMessage
+}
+else if(PageReady)
+{
+    <h3>Artifacts: @entryname</h3>
+    @if(HasMarkdown)
+    {
+        <div class="line" />
+        <div class="markdown-zone">
+            @((MarkupString)MarkdownHTML)
+        </div>
+        <br class="line" />
+    }
+    <CascadingAuthenticationState>
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Artifact</th>
+              <th scope="col">Download</th>
+            </tr>
+          </thead>
+          <tbody>
+            @foreach(var entry in ArtifactFileEntries)
+            {
+            <tr>
+              <th scope="row">@entry.FileName</th>
+              <th>
+                <a download="@entry.FileName" href="@(GetUrl(entry.FileName))">@entry.FileName</a>
+                <AuthorizeView Policy="admin">
+                  <Authorized>
+                    <button class="btn btn-danger" style="float: right;" @onclick=@(() => HandleDeleteFile(entry.FileName))>Delete</button>
+                  </Authorized>
+                </AuthorizeView>
+              </th>
+            </tr>
+            }
+          </tbody>
+        </table>
+    </CascadingAuthenticationState>
+}
+else
+{
+    <div class="wait">Please wait...</div>
+}
+
+
+@code {
+    [Parameter]
+    public string projectname { get; set; }
+    [Parameter]
+    public string branchname { get; set; }
+    [Parameter]
+    public string entryname { get; set; }
+
+    private string ErrorMessage { get; set; } = null;
+
+    private bool PageReady = false;
+
+    private bool HasMarkdown = false;
+    private string MarkdownHTML;
+
+    private const string MARKDOWN_FILENAME = "artifact.md";
+
+    public class ArtifactFileEntryDTO
+    {
+        public string FileName { get; set; }
+        //TODO hash files
+        //public string SHA1 { get; set; } = "";
+    }
+
+    private List<ArtifactFileEntryDTO> ArtifactFileEntries { get; set; } = new();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await PollArtifacts();
+    }
+
+    public void HandleDeleteFile(string file)
+    {
+        InvokeAsync(async () =>
+        {
+            await projectmgmt.DeleteArtifactFile(projectname, branchname, entryname, file);
+            await PollArtifacts();
+            StateHasChanged();
+        });
+    }
+
+    public string GetUrl(string filename)
+    {
+        var projecturl = WebUtility.UrlEncode(projectname);
+        var branchurl = WebUtility.UrlEncode(branchname);
+        var entryurl = WebUtility.UrlEncode(entryname);
+        var fileurl = WebUtility.UrlEncode(filename);
+        return $"/api/artifact/download-artifact?project={projecturl}&branch={branchurl}&entryname={entryurl}&artifact={fileurl}";
+    }
+
+    public Task PollArtifacts()
+    {
+        ArtifactFileEntries.Clear();
+        var project = db.Projects.FirstOrDefault(x => x.Name == projectname);
+        if(project == null)
+        {
+            ErrorMessage = "Sorry that project doesn't exist";
+            StateHasChanged();
+            return Task.CompletedTask;
+        }
+
+        var branch = project.Branches.FirstOrDefault(x => x.Name == branchname);
+        if(branch == null)
+        {
+            ErrorMessage = "Sorry that branch doesn't exist";
+            StateHasChanged();
+            return Task.CompletedTask;
+        }
+
+        //get this entry
+        var entry = branch.Artifacts.FirstOrDefault(x => x.EntryName == entryname);
+        if(entry == null)
+        {
+            ErrorMessage = "Sorry that entry doesn't exist";
+            StateHasChanged();
+            return Task.CompletedTask;
+        }
+
+        //since postgre, materialize list
+        var fileEntries = entry.Files.OrderByDescending(x => x.FileName).ToList();
+        string baseFilePath = fileStorageOptions.Value.Path;
+        foreach(var file in fileEntries)
+        {
+            ArtifactFileEntries.Add(new ArtifactFileEntryDTO()
+            {
+                FileName = file.FileName
+            });
+
+            if(file.FileName == MARKDOWN_FILENAME)
+            {
+                var path = Path.Combine(new[] { baseFilePath, projectname, branchname, entryname, file.FileName });
+                string markdownStr = File.ReadAllText(path);
+                MarkdownHTML = ParseMarkdown(markdownStr);
+                HasMarkdown = true;
+            }
+        }
+
+        PageReady = true;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private static string ParseMarkdown(string mk)
+    {
+        var pipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .UseBootstrap()
+            .UseCustomContainers()
+            .Build();
+        string markdownDoc = Markdig.Markdown.ToHtml(mk, pipeline);
+        //return markdownDoc;
+        var sanitizer = new HtmlSanitizer();
+        return sanitizer.Sanitize(markdownDoc);
+    }
+}
+

@@ -1,0 +1,56 @@
+﻿@using OIDC_ArtifactServer.Browser
+@inject UserTimezone userTimezone;
+@inject IHttpContextAccessor context;
+@inject NavigationManager nav;
+@page "/timezone"
+
+
+<EditForm Model="@timezone" OnValidSubmit="@HandleSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary/>
+
+    <br />
+    <p>
+        Timezone: <InputSelect id="project-name" @bind-Value="@timezone.Timezone">
+            @foreach(var tz in TimeZoneInfo.GetSystemTimeZones())
+            {
+                <option value="@tz.Id">@tz.DisplayName</option>
+            }
+        </InputSelect>
+    </p>
+    <button type="submit">Set</button>
+</EditForm>
+
+@code {
+    public class TZModel
+    {
+        public string Timezone { get; set; } = "UTC";
+    }
+
+    public TZModel timezone = new();
+
+    public async Task HandleSubmit()
+    {
+        await userTimezone.SetTimezone(timezone.Timezone);
+        nav.NavigateTo("/");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if(firstRender)
+        {
+            await SetupDropDown();
+        }
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    private async Task SetupDropDown()
+    {
+        var tz = await userTimezone.GetTimezone();
+        if(tz != null)
+        {
+            timezone.Timezone = tz;
+            StateHasChanged();
+        }
+    }
+}

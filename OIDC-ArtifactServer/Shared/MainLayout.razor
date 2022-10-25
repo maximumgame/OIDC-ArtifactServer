@@ -1,0 +1,33 @@
+﻿@inherits LayoutComponentBase
+
+<PageTitle>OIDC-ArtifactServer</PageTitle>
+
+<style>
+    .header-link{
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+</style>
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <CascadingAuthenticationState>
+                <AuthorizeView>
+                    <Authorized>
+                        <a class="header-link" href="/timezone">Change timezone</a>
+                    </Authorized>
+                </AuthorizeView>
+            </CascadingAuthenticationState>
+            <OIDC_ArtifactServer.Pages.Component.UserAuthBadge/>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>

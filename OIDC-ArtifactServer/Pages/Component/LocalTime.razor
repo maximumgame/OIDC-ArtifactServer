@@ -1,0 +1,45 @@
+﻿@using OIDC_ArtifactServer.Browser
+@inject UserTimezone userTimezone;
+@inject ILogger<LocalTime> log;
+
+@if(NewTimeSet)
+{
+    @NewTime
+}
+else
+{
+    @Time
+}
+
+@code {
+    [Parameter]
+    public DateTime Time { get; set; }
+    private bool NewTimeSet = false;
+    private DateTime NewTime { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if(firstRender)
+            await ToLocalTime();
+    }
+
+    private async Task ToLocalTime()
+    {
+        var timezone = await userTimezone.GetTimezone();
+        if(timezone == null) //has not been set
+            return;
+
+        //convert time to new time
+        TimeZoneInfo timeZoneInfo = TimeZoneInfo.FindSystemTimeZoneById(timezone);
+        try
+        {
+            NewTime = TimeZoneInfo.ConvertTimeFromUtc(Time, timeZoneInfo);
+            NewTimeSet = true;
+            StateHasChanged();
+        }
+        catch(Exception e)
+        {
+            log.LogError(e.Message);
+        }
+    }
+}
